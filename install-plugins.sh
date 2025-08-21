@@ -1,15 +1,17 @@
 #!/bin/bash
 
-PluginDir = "~/.idapro/plugins"
-if [[ ! -d ${PluginDir} ]]; then
+# Use $HOME for proper expansion
+PluginDir="${HOME}/.idapro/plugins"
+
+if [ ! -d "${PluginDir}" ]; then
     echo "Creating plugins directory for IDA at ${PluginDir}"
-    mkdir -p ${PluginDir}
+    mkdir -p "${PluginDir}"
 fi
 
+echo "Copying plugins to ${PluginDir}"
 # copy the plugins
-cp -r plugins/* ${PluginDir}
+cp -r plugins/* "${PluginDir}/"
 
-# copy supporting files
-mkdir -p ${PluginDir}/ida-swift 2>/dev/null
-cp -r dwarf tools ${PluginDir}/ida-swift
+
+echo "Installation complete!"
 

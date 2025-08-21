@@ -9,7 +9,7 @@ import idc
 gRegisterToName = {
     "x20" : "self",
     "x21" : "error",
-    "x22" : "task"
+    "x22" : "context"
 }
 
 class SwiftRegisterArgsPlugin(idaapi.plugin_t):
@@ -29,7 +29,7 @@ class SwiftRegisterArgsPlugin(idaapi.plugin_t):
         return idaapi.PLUGIN_SKIP
 
     def run(self, arg):
-        pass
+        ida_kernwin.msg("Swift Register Arguments running!\n")
 
     def term(self):
         if self.hooks:
@@ -101,6 +101,32 @@ class AddRegisterHandler(ida_kernwin.action_handler_t):
     def update(self, ctx):
         return ida_kernwin.AST_ENABLE_FOR_WIDGET
 
+def get_register_type(register):
+    """
+    Get the appropriate type for a register.
+    For X22, use swift::AsyncContext* if it exists, otherwise void*.
+    For other registers, use void*.
+    """
+    # For X22, try to use swift::AsyncContext* if the type exists
+    if register.upper() == "X22":
+        til = idaapi.get_idati()
+        async_context_type = ida_typeinf.tinfo_t()
+        
+        # Check if swift::AsyncContext type exists
+        if async_context_type.get_named_type(til, "swift::AsyncContext"):
+            # Create pointer to swift::AsyncContext
+            ptr_type = ida_typeinf.tinfo_t()
+            ptr_type.create_ptr(async_context_type)
+            ida_kernwin.msg(f"Using swift::AsyncContext* for X22\n")
+            return ptr_type
+        else:
+            ida_kernwin.msg(f"swift::AsyncContext type not found, using void* for X22\n")
+    
+    # Default to void* for all other cases
+    void_ptr = ida_typeinf.tinfo_t()
+    void_ptr.create_ptr(ida_typeinf.tinfo_t(ida_typeinf.BTF_VOID))
+    return void_ptr
+
 def add_register_to_signature(func_ea, register):
     tinfo = ida_typeinf.tinfo_t()
     if not ida_nalt.get_tinfo(tinfo, func_ea):
@@ -131,8 +157,7 @@ def add_register_to_signature(func_ea, register):
     assert( register.lower() in gRegisterToName )
     
     new_arg = ida_typeinf.funcarg_t()
-    new_arg.type = ida_typeinf.tinfo_t()
-    new_arg.type.create_ptr(ida_typeinf.tinfo_t(ida_typeinf.BTF_VOID))
+    new_arg.type = get_register_type(register)
     new_arg.name = gRegisterToName[register.lower()]
     new_arg.argloc = ida_typeinf.argloc_t()
     
@@ -144,7 +169,80 @@ def add_register_to_signature(func_ea, register):
     new_arg.argloc.set_reg1(reg_num)
     new_arg.flags = ida_typeinf.FAI_HIDDEN
     
-    func_details.push_back(new_arg)
+    # Rebuild the argument list with Swift ABI registers first
+    # Define the order for Swift ABI registers
+    swift_reg_order = {"X20": 0, "X21": 1, "X22": 2}
+    
+    # Store existing arguments by iterating with index
+    existing_args = []
+    for i in range(func_details.size()):
+        arg = func_details[i]
+        # Create a copy of the argloc to avoid reference issues
+        argloc_copy = ida_typeinf.argloc_t(arg.argloc)
+        
+        # Store a copy of the argument data
+        arg_copy = {
+            'name': arg.name,
+            'type': arg.type.copy(),
+            'argloc': argloc_copy,
+            'cmt': arg.cmt,
+            'flags': arg.flags
+        }
+        existing_args.append(arg_copy)
+    
+    # Separate existing args into Swift ABI args and regular args
+    swift_args = []
+    regular_args = []
+    
+    for arg_data in existing_args:
+        if arg_data['argloc'].is_reg1():
+            reg_name = get_register_name(arg_data['argloc'].reg1())
+            if reg_name and reg_name.upper() in swift_reg_order:
+                swift_args.append((swift_reg_order[reg_name.upper()], arg_data))
+            else:
+                regular_args.append(arg_data)
+        else:
+            regular_args.append(arg_data)
+    
+    # Add the new Swift register data with a proper argloc copy
+    new_argloc = ida_typeinf.argloc_t()
+    new_argloc.set_reg1(reg_num)
+    
+    new_arg_data = {
+        'name': gRegisterToName[register.lower()],
+        'type': get_register_type(register),
+        'argloc': new_argloc,
+        'cmt': "",
+        'flags': ida_typeinf.FAI_HIDDEN
+    }
+    swift_args.append((swift_reg_order[register.upper()], new_arg_data))
+    
+    # Sort Swift args by their defined order
+    swift_args.sort(key=lambda x: x[0])
+    
+    # Clear the function arguments using the proper method
+    while func_details.size() > 0:
+        func_details.pop_back()
+    
+    # Add Swift ABI registers first
+    for _, arg_data in swift_args:
+        fa = ida_typeinf.funcarg_t()
+        fa.name = arg_data['name']
+        fa.type = arg_data['type']
+        fa.argloc = arg_data['argloc']
+        fa.cmt = arg_data['cmt']
+        fa.flags = arg_data['flags']
+        func_details.push_back(fa)
+    
+    # Add regular arguments after
+    for arg_data in regular_args:
+        fa = ida_typeinf.funcarg_t()
+        fa.name = arg_data['name']
+        fa.type = arg_data['type']
+        fa.argloc = arg_data['argloc']
+        fa.cmt = arg_data['cmt']
+        fa.flags = arg_data['flags']
+        func_details.push_back(fa)
     
     new_tinfo = ida_typeinf.tinfo_t()
     if not new_tinfo.create_func(func_details):
@@ -167,6 +265,15 @@ def get_register_number(reg_name):
         "X22": 151   # 129 + 22
     }
     return reg_map.get(reg_name, -1)
+
+def get_register_name(reg_num):
+    # Reverse mapping of ARM64 register IDs to names
+    reg_map = {
+        149: "X20",
+        150: "X21",
+        151: "X22"
+    }
+    return reg_map.get(reg_num, None)
 
 def PLUGIN_ENTRY():
     return SwiftRegisterArgsPlugin()

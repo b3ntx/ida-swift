@@ -1,11 +1,12 @@
-# Swift Register Arguments Plugin
+# IDAPro Plugins for Swift
 
 ## Installation
-Copy `swift_register_args.py` to your IDA Pro plugins directory:
-- Windows: `%APPDATA%\Hex-Rays\IDA Pro\plugins\`
-- macOS, Linux: `~/.idapro/plugins/`
+
+Run `install-plugins.sh`.
 
 ## Usage
+
+### plugins/swift_register_args.py
 1. Open a Swift binary in IDA Pro
 2. Navigate to any Swift function
 3. Right-click anywhere in the function (disassembly or decompiler view)
@@ -19,6 +20,3 @@ The plugin will automatically:
 - Add the selected register as a parameter
 - Update the decompiler view immediately
 
-## Notes
-- The plugin works with stripped binaries (no symbols required)
-- Each register can only be added once per function
