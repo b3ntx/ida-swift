@@ -131,7 +131,11 @@ def add_register_to_signature(func_ea, register):
     tinfo = ida_typeinf.tinfo_t()
     if not ida_nalt.get_tinfo(tinfo, func_ea):
         func_details = ida_typeinf.func_type_data_t()
-        func_details.cc = ida_typeinf.CM_CC_SPECIAL
+        # thanks for changing the API, hexrays!
+        if hasattr(func_details, 'cc'):
+            func_details.cc = ida_typeinf.CM_CC_SPECIAL
+        else:
+            func_details.set_cc(ida_typeinf.CM_CC_SPECIAL)
         
         ret_type = ida_typeinf.tinfo_t()
         ret_type.create_simple_type(ida_typeinf.BTF_VOID)
@@ -145,8 +149,15 @@ def add_register_to_signature(func_ea, register):
         ida_kernwin.msg("Failed to get function details\n")
         return False
     
-    if func_details.cc != ida_typeinf.CM_CC_SPECIAL and func_details.cc != ida_typeinf.CM_CC_SPECIALE and func_details.cc != ida_typeinf.CM_CC_SPECIALP:
-        func_details.cc = ida_typeinf.CM_CC_SPECIAL
+    # thanks for changing the API, hexrays!
+    cc = func_details.cc if hasattr(func_details, 'cc') else func_details.get_explicit_cc()
+
+    if cc != ida_typeinf.CM_CC_SPECIAL and cc != ida_typeinf.CM_CC_SPECIALE and cc != ida_typeinf.CM_CC_SPECIALP:
+        # thanks for changing the API, hexrays!
+        if hasattr(func_details, 'cc'):
+            func_details.cc = ida_typeinf.CM_CC_SPECIAL
+        else:
+            func_details.set_cc(ida_typeinf.CM_CC_SPECIAL)
         ida_kernwin.msg(f"Converting function to __usercall\n")
     
     for arg in func_details:
